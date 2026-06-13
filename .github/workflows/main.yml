@@ -18,23 +18,21 @@ jobs:
 
       - name: Execute SukiSU Build Pipeline
         run: |
-          # Wywołujemy to tak, żeby environment trzymał się w jednym bloku
+          # Pobranie i uruchomienie skryptu konfiguracyjnego[span_1](start_span)[span_1](end_span)
           curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
           
-          # Zakładając, że setup.sh ustawia $CC, $CROSS_COMPILE i resztę
-          # Jeśli po skrypcie nie masz gotowych zmiennych, musimy je tutaj wymusić:
+          # Ustawienie zmiennych środowiskowych dla architektury arm64[span_2](start_span)[span_2](end_span)
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Tutaj kompilacja (dostosuj nazwę defconfig jeśli potrzebujesz)
-          make O=out a52sxq_eur_open_defconfig
+          # Kompilacja z poprawną ścieżką do defconfig[span_3](start_span)[span_3](end_span)
+          make O=out vendor/a52sxq_eur_open_defconfig
           make -j$(nproc) O=out
 
       - name: Package to AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3 -b master AK3
           cp out/arch/arm64/boot/Image.gz-dtb AK3/
-          # Jeśli SukiSU generuje dtbo, dodaj: cp out/arch/arm64/boot/dtbo.img AK3/
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
