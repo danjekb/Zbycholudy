@@ -7,10 +7,10 @@ echo "==> 1. Klonowanie ReSukiSU bezpośrednio do drzewa kernela..."
 rm -rf KernelSU drivers/kernelsu
 git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU --depth=1
 
-echo "==> 2. Pobieranie SusFS dla Kernel 5.4 z Gitlaba (Archive)..."
+echo "==> 2. Pobieranie SusFS dla Kernel 5.4 z GitHub Mirror (Archive)..."
 rm -rf susfs_src susfs.tar.gz
-# Pobieramy bezpośrednią paczkę archiwum, zamiast podatnego na błędy git clone
-wget -q "https://gitlab.com/noname447/susfs4ksu/-/archive/gki-android12-5.4-susfs-${SUSFS_VERSION}/susfs4ksu-gki-android12-5.4-susfs-${SUSFS_VERSION}.tar.gz" -O susfs.tar.gz
+# Pobieramy ze stabilnego mirroru na GitHubie zamiast kapryśnego GitLaba
+wget -q "https://github.com/Geon-Mo/susfs4ksu/archive/refs/heads/gki-android12-5.4-susfs-${SUSFS_VERSION}.tar.gz" -O susfs.tar.gz
 
 mkdir susfs_src
 tar -xzf susfs.tar.gz -C susfs_src --strip-components=1
