@@ -1,0 +1,137 @@
+name: A52s Kernel Build (KSU Next)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ksu-next
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    env:
+      ARCH: arm64
+      SUBARCH: arm64
+      KBUILD_BUILD_USER: Zbycholudy
+      KBUILD_BUILD_HOST: GitHub-Actions
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Update KernelSU Next submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --force
+
+          echo "===== SUBMODULE STATUS ====="
+          git submodule status
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+
+          sudo apt install -y \
+            git curl wget python3 python3-pip \
+            zip unzip tar flex bison bc cpio \
+            build-essential libssl-dev \
+            libelf-dev dwarves lld \
+            gcc-aarch64-linux-gnu \
+            gcc-arm-linux-gnueabi
+
+      - name: Download AOSP Clang r530567
+        run: |
+          mkdir clang
+          cd clang
+
+          wget -O clang.tar.gz \
+          https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz
+
+          tar -xzf clang.tar.gz
+
+          echo "===== CLANG FILES ====="
+          ls -lah
+          find . -name clang
+
+      - name: Verify Clang
+        run: |
+          chmod +x clang/bin/clang || true
+
+          echo "===== CLANG VERSION ====="
+          clang/bin/clang --version || true
+
+      - name: Prepare output
+        run: |
+          mkdir -p out
+
+      - name: Generate defconfig
+        run: |
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+
+          make O=out \
+          ARCH=arm64 \
+          CC=clang \
+          LLVM=1 \
+          LLVM_IAS=1 \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          vendor/a52sxq_eur_open_defconfig
+
+      - name: Build kernel
+        run: |
+          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+
+          make -j$(nproc) O=out \
+          ARCH=arm64 \
+          CC=clang \
+          LLVM=1 \
+          LLVM_IAS=1 \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+      - name: Verify kernel output
+        run: |
+          echo "===== OUTPUT FILES ====="
+          ls -lah out/arch/arm64/boot/
+
+          test -f out/arch/arm64/boot/Image
+          echo "✓ Image found"
+
+      - name: Clone AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+
+      - name: Prepare flashable zip
+        run: |
+          cp out/arch/arm64/boot/Image AnyKernel3/
+
+          cd AnyKernel3
+
+          zip -r9 A52s-KSU-Next.zip . \
+          -x ".git*" \
+          -x "README.md"
+
+      - name: Upload Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-Image
+          path: out/arch/arm64/boot/Image
+
+      - name: Upload DTB Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-Image.gz-dtb
+          path: |
+            out/arch/arm64/boot/Image.gz-dtb
+            out/arch/arm64/boot/dtbo.img
+          if-no-files-found: ignore
+
+      - name: Upload Flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: A52s-KSU-Next
+          path: AnyKernel3/A52s-KSU-Next.zip
