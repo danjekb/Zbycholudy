@@ -1,0 +1,81 @@
+name: Build A52sxq Kernel with ReSukiSU & SusFS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache flex g++-multilib gcc-multilib git lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libssl-dev libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xz-utils zip zlib1g-dev
+
+      - name: Setup Toolchain (AOSP Clang r450784d)
+        run: |
+          mkdir clang
+          cd clang
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz
+          tar -xzf clang-r450784d.tar.gz
+          echo "$(pwd)/bin" >> $GITHUB_PATH
+
+      - name: Run ReSukiSU & SusFS Integration Script
+        run: |
+          chmod +x scripts/setup_susfs.sh
+          bash scripts/setup_susfs.sh
+
+      - name: Inject Defconfig Flags
+        run: |
+          DEFCONFIG="arch/arm64/configs/vendor/a52sxq_eur_open_defconfig"
+          
+          echo "==> Czyszczenie ewentualnych blokad Samsunga..."
+          sed -i 's/CONFIG_SEC_RESTRICT_FORK=y/CONFIG_SEC_RESTRICT_FORK=n/g' "$DEFCONFIG" 2>/dev/null || true
+          sed -i 's/CONFIG_SECURITY_DEFEX=y/CONFIG_SECURITY_DEFEX=n/g' "$DEFCONFIG" 2>/dev/null || true
+          
+          echo "==> Wstrzykiwanie flag dla ReSukiSU i SusFS..."
+          {
+            echo "CONFIG_KSU=y"
+            echo "CONFIG_SUSFS=y"
+            echo "CONFIG_SUSFS_SMART_HIDE=y"
+            echo "CONFIG_SUSFS_ALLOW_KSU_SUSFS_STATUS=y"
+          } >> "$DEFCONFIG"
+
+      - name: Compile Kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          
+          make O=out vendor/a52sxq_eur_open_defconfig
+          make -j$(nproc --all) O=out
+
+      - name: Collect Outputs
+        run: |
+          mkdir output
+          [ -f out/arch/arm64/boot/Image.gz ] && cp out/arch/arm64/boot/Image.gz output/
+          [ -f out/arch/arm64/boot/Image ] && cp out/arch/arm64/boot/Image output/
+          [ -f out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img output/ || true
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          files: output/*
+          tag_name: "ReSukiSU-SusFS-a52sxq-${{ github.run_number }}"
+          name: "Galaxy A52s 5G Kernel (ReSukiSU + SusFS) - Build #${{ github.run_number }}"
+          body: |
+            ### Wynik automatycznego budowania dla a52sxq
+            * **Urządzenie:** Samsung Galaxy A52s 5G (a52sxq)
+            * **Defconfig:** `vendor/a52sxq_eur_open_defconfig`
+            * **Silnik:** ReSukiSU + SusFS v1.5.1
+            * **Kompilator:** AOSP Clang r450784d
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
