@@ -1,0 +1,44 @@
+name: Compile SlopKernel
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y bc bison build-essential ccache curl flex g++-aarch64-linux-gnu gcc-aarch64-linux-gnu libc6-dev libssl-dev libxml2-utils make zlib1g-dev
+
+      - name: Execute SukiSU Build Pipeline
+        run: |
+          # Wywołujemy to tak, żeby environment trzymał się w jednym bloku
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
+          
+          # Zakładając, że setup.sh ustawia $CC, $CROSS_COMPILE i resztę
+          # Jeśli po skrypcie nie masz gotowych zmiennych, musimy je tutaj wymusić:
+          export ARCH=arm64
+          export SUBARCH=arm64
+          
+          # Tutaj kompilacja (dostosuj nazwę defconfig jeśli potrzebujesz)
+          make O=out a52sxq_eur_open_defconfig
+          make -j$(nproc) O=out
+
+      - name: Package to AnyKernel3
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3 -b master AK3
+          cp out/arch/arm64/boot/Image.gz-dtb AK3/
+          # Jeśli SukiSU generuje dtbo, dodaj: cp out/arch/arm64/boot/dtbo.img AK3/
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: AK3/*
+          tag_name: ${{ github.run_id }}
+          name: SlopKernel Build ${{ github.run_id }}
