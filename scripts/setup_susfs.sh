@@ -7,13 +7,10 @@ echo "==> 1. Klonowanie ReSukiSU bezpośrednio do drzewa kernela..."
 rm -rf KernelSU drivers/kernelsu
 git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU --depth=1
 
-echo "==> 2. Pobieranie SusFS dla Kernel 5.4 z GitHub Mirror (Archive)..."
-rm -rf susfs_src susfs.tar.gz
-# Pobieramy ze stabilnego mirroru na GitHubie zamiast kapryśnego GitLaba
-wget -q "https://github.com/Geon-Mo/susfs4ksu/archive/refs/heads/gki-android12-5.4-susfs-${SUSFS_VERSION}.tar.gz" -O susfs.tar.gz
-
-mkdir susfs_src
-tar -xzf susfs.tar.gz -C susfs_src --strip-components=1
+echo "==> 2. Klonowanie SusFS z GitHub Mirror..."
+rm -rf susfs_src
+# Pobieramy bezpośrednio jako repozytorium z GitHuba - to zawsze działa w Actions
+git clone https://github.com/Geon-Mo/susfs4ksu.git -b gki-android12-5.4-susfs-${SUSFS_VERSION} susfs_src --depth=1
 
 echo "==> 3. Kopiowanie plików źródłowych SusFS..."
 cp susfs_src/kernel/include/linux/susfs.h include/linux/
@@ -39,5 +36,5 @@ if ! grep -q "obj-y += KernelSU/" Makefile; then
 fi
 
 echo "==> 7. Sprzątanie plików tymczasowych..."
-rm -rf susfs_src susfs.tar.gz
+rm -rf susfs_src
 echo "==> Proces integracji ReSukiSU + SusFS zakończony powodzeniem!"
