@@ -1,0 +1,98 @@
+name: A52s KernelSU-Next (LEGACY) + SUSFS + AnyKernel3
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - Pszejebane
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          sudo apt update
+          sudo apt install -y git curl wget zip unzip bc flex bison build-essential \
+          libssl-dev libelf-dev clang lld llvm
+
+      # =========================
+      # TOOLCHAIN
+      # =========================
+      - name: Setup Clang
+        run: |
+          mkdir clang
+          cd clang
+          wget -q https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/20.0.0/clang-r547379.tar.zst
+          tar -xf clang-r547379.tar.zst
+          cd ..
+
+      # =========================
+      # KERNELSU NEXT (LEGACY)
+      # =========================
+      - name: Clone KernelSU Next
+        run: |
+          git clone https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU
+
+      - name: Inject KernelSU Next (LEGACY)
+        run: |
+          cd KernelSU
+          bash kernel/setup.sh
+          cd ..
+
+      # =========================
+      # SUSFS
+      # =========================
+      - name: Clone SUSFS
+        run: |
+          git clone https://github.com/sidex15/susfs4ksu susfs
+
+      - name: Apply SUSFS
+        run: |
+          cp -r susfs/kernel/* ./ || true
+
+      # =========================
+      # DEFCONFIG
+      # =========================
+      - name: Configure kernel
+        run: |
+          make O=out ARCH=arm64 a52sxq_eur_open_defconfig
+
+      # =========================
+      # BUILD
+      # =========================
+      - name: Build kernel
+        run: |
+          export PATH=$PWD/clang/bin:$PATH
+          make O=out ARCH=arm64 CC=clang -j$(nproc)
+
+      # =========================
+      # ANYKERNEL3
+      # =========================
+      - name: Clone AnyKernel3
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+
+      - name: Package ZIP
+        run: |
+          mkdir -p AnyKernel3/kernel
+
+          find out -name "Image*" -exec cp {} AnyKernel3/kernel/ \;
+          find out -name "*.dtb" -exec cp {} AnyKernel3/ \; || true
+          find out -name "*.dtbo" -exec cp {} AnyKernel3/ \; || true
+
+          cd AnyKernel3
+          zip -r9 A52s-KSU-Next-Legacy.zip . -x "*.git*"
+
+      # =========================
+      # UPLOAD
+      # =========================
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: A52s-KSU-Next-Legacy
+          path: AnyKernel3/A52s-KSU-Next-Legacy.zip
