@@ -17,12 +17,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache flex g++-multilib gcc-multilib git lib32readline-dev lib32z1-dev libelf-dev liblz4-tool libssl-dev libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xz-utils zip zlib1g-dev
 
-      - name: Setup Toolchain (AOSP Clang r450784d)
+      - name: Setup Toolchain (Proton Clang)
         run: |
           mkdir clang
           cd clang
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r450784d.tar.gz
-          tar -xzf clang-r450784d.tar.gz
+          wget -q https://github.com/kdrag0n/proton-clang/archive/refs/heads/master.tar.gz
+          tar -xf master.tar.gz --strip-components=1
           echo "$(pwd)/bin" >> $GITHUB_PATH
 
       - name: Run ReSukiSU & SusFS Integration Script
@@ -54,8 +54,11 @@ jobs:
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
           
+          # Generowanie configu na bazie pliku dla A52s 5G
           make O=out vendor/a52sxq_eur_open_defconfig
-          make -j$(nproc --all) O=out
+          
+          # Kompilacja przy użyciu Proton Clang (LLVM)
+          make -j$(nproc --all) O=out LLVM=1 LLVM_IAS=1
 
       - name: Collect Outputs
         run: |
@@ -76,6 +79,6 @@ jobs:
             * **Urządzenie:** Samsung Galaxy A52s 5G (a52sxq)
             * **Defconfig:** `vendor/a52sxq_eur_open_defconfig`
             * **Silnik:** ReSukiSU + SusFS v1.5.1
-            * **Kompilator:** AOSP Clang r450784d
+            * **Kompilator:** Proton Clang (LLVM)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
