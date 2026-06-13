@@ -1,4 +1,4 @@
-name: A52s Kernel Build (KSU Next)
+name: A52s Kernel Build (KSU Next + SUSFS)
 
 on:
   workflow_dispatch:
@@ -23,29 +23,27 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Update KernelSU Next submodules
+      - name: Sync submodules
         run: |
           git submodule sync --recursive
           git submodule update --init --recursive --force
 
-          echo "===== SUBMODULE STATUS ====="
-          git submodule status
-
       - name: Install dependencies
         run: |
           sudo apt update
-
           sudo apt install -y \
-            git curl wget python3 python3-pip \
-            zip unzip tar flex bison bc cpio \
-            build-essential libssl-dev \
-            libelf-dev dwarves lld \
-            gcc-aarch64-linux-gnu \
-            gcc-arm-linux-gnueabi
+            git curl wget zip unzip tar \
+            bc bison flex make \
+            build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 rsync cpio dwarves
 
+      # =========================
+      # AOSP CLANG r530567 (ORIGINAL)
+      # =========================
       - name: Download AOSP Clang r530567
         run: |
-          mkdir clang
+          mkdir -p clang
           cd clang
 
           wget -O clang.tar.gz \
@@ -53,85 +51,102 @@ jobs:
 
           tar -xzf clang.tar.gz
 
-          echo "===== CLANG FILES ====="
+          echo "===== CLANG STRUCTURE ====="
           ls -lah
-          find . -name clang
+
+      - name: Setup Clang PATH
+        run: |
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: Verify Clang
         run: |
-          chmod +x clang/bin/clang || true
+          clang --version
+          which clang
 
-          echo "===== CLANG VERSION ====="
-          clang/bin/clang --version || true
+      # =========================
+      # KSU NEXT + SUSFS SETUP
+      # =========================
+      - name: KernelSU Next + SUSFS (legacy-susfs-v2)
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
 
       - name: Prepare output
-        run: |
-          mkdir -p out
+        run: mkdir -p out
 
+      # =========================
+      # DEFCONFIG
+      # =========================
       - name: Generate defconfig
         run: |
-          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          make O=out ARCH=arm64 \
+            CC=clang \
+            LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            vendor/a52sxq_eur_open_defconfig
 
-          make O=out \
-          ARCH=arm64 \
-          CC=clang \
-          LLVM=1 \
-          LLVM_IAS=1 \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-          vendor/a52sxq_eur_open_defconfig
-
+      # =========================
+      # BUILD
+      # =========================
       - name: Build kernel
         run: |
-          export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+          make -j$(nproc) O=out ARCH=arm64 \
+            CC=clang \
+            LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-          make -j$(nproc) O=out \
-          ARCH=arm64 \
-          CC=clang \
-          LLVM=1 \
-          LLVM_IAS=1 \
-          CROSS_COMPILE=aarch64-linux-gnu- \
-          CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-
-      - name: Verify kernel output
+      # =========================
+      # VERIFY
+      # =========================
+      - name: Verify output
         run: |
-          echo "===== OUTPUT FILES ====="
-          ls -lah out/arch/arm64/boot/
+          echo "===== BOOT DIR ====="
+          ls -lah out/arch/arm64/boot || true
 
           test -f out/arch/arm64/boot/Image
-          echo "✓ Image found"
 
+      # =========================
+      # ANYKERNEL3
+      # =========================
       - name: Clone AnyKernel3
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git AnyKernel3
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
 
-      - name: Prepare flashable zip
+      - name: Create Flashable ZIP
         run: |
-          cp out/arch/arm64/boot/Image AnyKernel3/
-
           cd AnyKernel3
 
-          zip -r9 A52s-KSU-Next.zip . \
-          -x ".git*" \
-          -x "README.md"
+          if [ -f ../out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp ../out/arch/arm64/boot/Image.gz-dtb ./Image
+          elif [ -f ../out/arch/arm64/boot/Image ]; then
+            cp ../out/arch/arm64/boot/Image ./Image
+          else
+            echo "ERROR: No kernel image found"
+            exit 1
+          fi
 
+          zip -r9 A52s-KSU-SUSFS.zip . \
+            -x ".git*" -x "README.md"
+
+      # =========================
+      # ARTIFACTS
+      # =========================
       - name: Upload Image
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Image
           path: out/arch/arm64/boot/Image
 
-      - name: Upload DTB Image
+      - name: Upload DTBO
         uses: actions/upload-artifact@v4
         with:
-          name: Kernel-Image.gz-dtb
-          path: |
-            out/arch/arm64/boot/Image.gz-dtb
-            out/arch/arm64/boot/dtbo.img
+          name: DTBO
+          path: out/arch/arm64/boot/dtbo.img
           if-no-files-found: ignore
 
-      - name: Upload Flashable ZIP
+      - name: Upload ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: A52s-KSU-Next
-          path: AnyKernel3/A52s-KSU-Next.zip
+          name: A52s-KSU-SUSFS
+          path: AnyKernel3/A52s-KSU-SUSFS.zip
