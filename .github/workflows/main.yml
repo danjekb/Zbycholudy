@@ -68,7 +68,18 @@ jobs:
       - name: KernelSU Next + SUSFS (legacy-susfs-v2)
         run: |
           set -e
-          curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
+          # setup.sh klonuje do katalogu "KernelSU-Next/" — jeśli już istnieje, pomija clone.
+          # Pre-klonujemy fork sidex15 (z SUSFS) zanim skrypt to zrobi, żeby nie trafił
+          # na oficjalne KernelSU-Next/KernelSU-Next, które nie ma gałęzi legacy-susfs-v2.
+          git clone --depth=1 \
+            --branch legacy-susfs-v2 \
+            https://github.com/sidex15/KernelSU-Next.git \
+            KernelSU-Next
+          # Ustawienie origin/HEAD potrzebne dla git rev-parse w setup.sh (set -eu)
+          git -C KernelSU-Next remote set-head origin legacy-susfs-v2
+          # Teraz setup.sh: widzi KernelSU-Next/ → pomija clone → git checkout legacy-susfs-v2 ✓
+          curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/legacy-susfs-v2/kernel/setup.sh" \
+            | bash -s legacy-susfs-v2
           if [ ! -d drivers/kernelsu ]; then
             echo "ERROR: KernelSU Next script failed"
             exit 1
