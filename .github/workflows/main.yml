@@ -36,7 +36,7 @@ jobs:
             bc bison flex make \
             build-essential libssl-dev libelf-dev \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            python3 rsync cpio dwarves
+            python3 rsync cpio dwarves pahole
 
       # =========================
       # AOSP CLANG r530567 (ORIGINAL)
@@ -45,18 +45,17 @@ jobs:
         run: |
           mkdir -p clang
           cd clang
-
           wget -O clang.tar.gz \
-          https://github.com/danjekb/tools/releases/download/clang/main-clang-r530567.tar.gz
-
+            https://github.com/danjekb/tools/releases/download/clang/main-clang-r530567.tar.gz
           tar -xzf clang.tar.gz
-
-          echo "===== CLANG STRUCTURE ====="
-          ls -lah
+          rm clang.tar.gz
+          if [ ! -f bin/clang ]; then
+            echo "ERROR: Clang binary not found"
+            exit 1
+          fi
 
       - name: Setup Clang PATH
-        run: |
-          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+        run: echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
 
       - name: Verify Clang
         run: |
@@ -64,35 +63,59 @@ jobs:
           which clang
 
       # =========================
-      # KSU NEXT + SUSFS SETUP
+      # PATCHING: KernelSU Next + SUSFS
       # =========================
       - name: KernelSU Next + SUSFS (legacy-susfs-v2)
         run: |
+          set -e
           curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/legacy-susfs-v2/kernel/setup.sh" | bash -s legacy-susfs-v2
+          if [ ! -d drivers/kernelsu ]; then
+            echo "ERROR: KernelSU Next script failed"
+            exit 1
+          fi
 
+      # =========================
+      # DODATKOWE PATCHOWANIE (własne łatki)
+      # =========================
+      # Przykład: zastosuj łatkę z pliku w repozytorium
+      # - name: Apply custom patches
+      #   run: |
+      #     git apply --verbose path/to/your.patch
+      #     # lub dla wielu łatek:
+      #     # for patch in patches/*.patch; do git apply "$patch"; done
+
+      # Możesz też sklonować osobne repozytorium z łatkami:
+      # - name: Clone patch repository
+      #   run: git clone https://github.com/twoje/nasze-łatki.git
+      # - name: Apply patches
+      #   run: |
+      #     cd nasze-łatki
+      #     ./apply_patches.sh ../
+
+      # =========================
+      # BUILD (LLVM_IAS=1 – wymagane dla LTO/CFI)
+      # =========================
       - name: Prepare output
         run: mkdir -p out
 
-      # =========================
-      # DEFCONFIG
-      # =========================
       - name: Generate defconfig
         run: |
           make O=out ARCH=arm64 \
             CC=clang \
-            LLVM=1 LLVM_IAS=1 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            LD=ld.lld \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             vendor/a52sxq_eur_open_defconfig
 
-      # =========================
-      # BUILD
-      # =========================
       - name: Build kernel
         run: |
           make -j$(nproc) O=out ARCH=arm64 \
             CC=clang \
-            LLVM=1 LLVM_IAS=1 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            LD=ld.lld \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
@@ -102,50 +125,56 @@ jobs:
       - name: Verify output
         run: |
           echo "===== BOOT DIR ====="
-          ls -lah out/arch/arm64/boot || true
-
-          test -f out/arch/arm64/boot/Image
-
-      # =========================
-      # ANYKERNEL3
-      # =========================
-      - name: Clone AnyKernel3
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
-
-      - name: Create Flashable ZIP
-        run: |
-          cd AnyKernel3
-
-          if [ -f ../out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp ../out/arch/arm64/boot/Image.gz-dtb ./Image
-          elif [ -f ../out/arch/arm64/boot/Image ]; then
-            cp ../out/arch/arm64/boot/Image ./Image
+          ls -lah out/arch/arm64/boot/
+          if [ -f out/arch/arm64/boot/Image ]; then
+            echo "Kernel image found: Image"
           else
             echo "ERROR: No kernel image found"
             exit 1
           fi
 
-          zip -r9 A52s-KSU-SUSFS.zip . \
-            -x ".git*" -x "README.md"
+      # =========================
+      # ANYKERNEL3
+      # =========================
+      - name: Clone AnyKernel3
+        run: git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+
+      - name: Prepare AnyKernel3 files
+        run: |
+          cd AnyKernel3
+          # Kopiuj jądro
+          cp ../out/arch/arm64/boot/Image ./Image
+          # Kopiuj dtb (jeśli istnieje)
+          if [ -f ../out/arch/arm64/boot/dtb.img ]; then
+            cp ../out/arch/arm64/boot/dtb.img ./dtb
+          fi
+          # Kopiuj dtbo (jeśli istnieje)
+          if [ -f ../out/arch/arm64/boot/dtbo.img ]; then
+            cp ../out/arch/arm64/boot/dtbo.img ./dtbo
+          fi
+
+      - name: Create Flashable ZIP
+        run: |
+          cd AnyKernel3
+          zip -r9 A52s-KSU-SUSFS.zip . -x ".git*" -x "README.md"
 
       # =========================
       # ARTIFACTS
       # =========================
-      - name: Upload Image
+      - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Image
           path: out/arch/arm64/boot/Image
 
-      - name: Upload DTBO
+      - name: Upload DTBO (if exists)
         uses: actions/upload-artifact@v4
         with:
           name: DTBO
           path: out/arch/arm64/boot/dtbo.img
           if-no-files-found: ignore
 
-      - name: Upload ZIP
+      - name: Upload Flashable ZIP
         uses: actions/upload-artifact@v4
         with:
           name: A52s-KSU-SUSFS
