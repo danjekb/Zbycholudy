@@ -47,7 +47,7 @@ jobs:
           cd clang
 
           wget -O clang.tar.gz \
-          https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r530567.tar.gz
+          https://github.com/danjekb/tools/releases/download/clang/main-clang-r530567.tar.gz
 
           tar -xzf clang.tar.gz
 
